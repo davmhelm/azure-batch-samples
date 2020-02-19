@@ -29,11 +29,13 @@ required files.  The focus of this sample is on the API calls required to add
 a job to the Batch service and monitor the status of that job from a client.
 
 #### [sample2\_pools\_and\_resourcefiles.py](./sample2_pools_and_resourcefiles.py)
-This sample expands on the HelloWorld sample. It creates a fixed pool and then
-submits a simple python script as the only task of the job. This sample also
-showcases the use of a StartTask as a method to get files onto every node in
-the pool. This sample is geared towards Linux with calls to list node agent
-sku ids, selecting a publisher, offer and sku for the Linux VM gallery image.
+This sample demonstrates creating a batch pool supporting container tasks.
+It creates a fixed pool of nodes each having an empty data disk attached. A
+bash script is supplied as a startup task, which configures the data disk for
+use, and configures Docker to use the data disk for its root. The job submitted
+consists of a single container task which performs a simple echo command.
+This sample is geared towards Linux with calls to list node agent sku ids, 
+selecting a publisher, offer and sku for the Linux VM gallery image.
 
 #### [sample3\_encrypted\_resourcefiles.py](./sample3_encrypted_resourcefiles.py)
 This sample shows how to generate on-demand encryption keys in conjunction with
