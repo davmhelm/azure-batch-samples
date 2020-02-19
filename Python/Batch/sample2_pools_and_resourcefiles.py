@@ -24,6 +24,8 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+## MODIFIED FOR CONTAINER WORKLOADS
+
 from __future__ import print_function
 try:
     import configparser
@@ -40,8 +42,8 @@ import azure.batch.models as batchmodels
 import common.helpers
 
 _CONTAINER_NAME = 'poolsandresourcefiles'
-_SIMPLE_TASK_NAME = 'simple_task.py'
-_SIMPLE_TASK_PATH = os.path.join('resources', 'simple_task.py')
+_SIMPLE_TASK_NAME = 'node_prep.bash'
+_SIMPLE_TASK_PATH = os.path.join('resources', 'node_prep.bash')
 
 
 def create_pool(batch_client, block_blob_client, pool_id, vm_size, vm_count):
@@ -55,10 +57,16 @@ def create_pool(batch_client, block_blob_client, pool_id, vm_size, vm_count):
     :param str vm_size: vm size (sku)
     :param int vm_count: number of vms to allocate
     """
-    # pick the latest supported 16.04 sku for UbuntuServer
-    sku_to_use, image_ref_to_use = \
-        common.helpers.select_latest_verified_vm_image_with_node_agent_sku(
-            batch_client, 'Canonical', 'UbuntuServer', '16.04')
+    
+    image_ref_to_use = batch.models.ImageReference(
+        publisher='microsoft-azure-batch',
+        offer='ubuntu-server-container',
+        sku='16-04-lts',
+        version='latest')
+
+    sku_to_use = 'batch.node.ubuntu 16.04'
+
+    container_conf = batch.models.ContainerConfiguration()
 
     block_blob_client.create_container(
         _CONTAINER_NAME,
@@ -71,18 +79,37 @@ def create_pool(batch_client, block_blob_client, pool_id, vm_size, vm_count):
         _SIMPLE_TASK_PATH,
         datetime.datetime.utcnow() + datetime.timedelta(hours=1))
 
+    # Home directory for pool tasks is 
+    pool_start_task_command_line= \
+        '/bin/sh -c "chmod +x ./' + _SIMPLE_TASK_NAME + \
+            ' && ./' + _SIMPLE_TASK_NAME + '" '
+
     pool = batchmodels.PoolAddParameter(
         id=pool_id,
         virtual_machine_configuration=batchmodels.VirtualMachineConfiguration(
             image_reference=image_ref_to_use,
-            node_agent_sku_id=sku_to_use),
+            container_configuration=container_conf,
+            node_agent_sku_id=sku_to_use,
+            data_disks=[batchmodels.DataDisk(
+                lun=0, # Use /dev/sdc when interacting with the scsi block device; /dev/sda is OS disk, /dev/sdb is temp disk
+                caching='none',
+                disk_size_gb=1023,
+                storage_account_type='premium_lrs')]
+            ),
         vm_size=vm_size,
         target_dedicated_nodes=vm_count,
         start_task=batchmodels.StartTask(
-            command_line="python " + _SIMPLE_TASK_NAME,
+            command_line=pool_start_task_command_line,
             resource_files=[batchmodels.ResourceFile(
-                            file_path=_SIMPLE_TASK_NAME,
-                            http_url=sas_url)]))
+                file_path=_SIMPLE_TASK_NAME,
+                http_url=sas_url)],
+            user_identity=batchmodels.UserIdentity(
+            auto_user=batchmodels.AutoUserSpecification(
+                scope="pool",
+                elevation_level="admin")
+            ),
+        )
+    )
 
     common.helpers.create_pool_if_not_exist(batch_client, pool)
 
@@ -98,10 +125,11 @@ def submit_job_and_add_task(batch_client, block_blob_client, job_id, pool_id):
     :param str job_id: The id of the job to create.
     :param str pool_id: The id of the pool to use.
     """
+
     job = batchmodels.JobAddParameter(
         id=job_id,
         pool_info=batchmodels.PoolInformation(pool_id=pool_id))
-
+ 
     batch_client.job.add(job)
 
     block_blob_client.create_container(
@@ -115,12 +143,15 @@ def submit_job_and_add_task(batch_client, block_blob_client, job_id, pool_id):
         _SIMPLE_TASK_PATH,
         datetime.datetime.utcnow() + datetime.timedelta(hours=1))
 
-    task = batchmodels.TaskAddParameter(
-        id="MyPythonTask",
-        command_line="python " + _SIMPLE_TASK_NAME,
-        resource_files=[batchmodels.ResourceFile(
-                        file_path=_SIMPLE_TASK_NAME,
-                        http_url=sas_url)])
+    task_id = 'container_sample_task'
+    task_container_settings = batch.models.TaskContainerSettings(
+        image_name='ubuntu'
+    )
+    task = batch.models.TaskAddParameter(
+        id=task_id,
+        command_line='/bin/sh -c \"echo \'hello world\' \" ',
+        container_settings=task_container_settings
+    )
 
     batch_client.task.add(job_id=job.id, task=task)
 
@@ -181,7 +212,8 @@ def execute_sample(global_config, sample_config):
 
     job_id = common.helpers.generate_unique_resource_name(
         "PoolsAndResourceFilesJob")
-    pool_id = "PoolsAndResourceFilesPool"
+    pool_id = common.helpers.generate_unique_resource_name(
+        "PoolsAndResourceFilesPool")
     try:
         create_pool(
             batch_client,
