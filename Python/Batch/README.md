@@ -65,6 +65,13 @@ recurrence based on its schedule. This Job Schedule is configured to run every
 Schedule will each create their own CloudServices AutoPool. The AutoPool's 
 lifetime is scoped to the Job.
 
+#### [sample5\_task\_and\_job\_dependencies.py](./sample5_task_and_job_dependencies.py)
+Adapted from the logic in the [CSharp Task Dependencies sample](../../CSharp/ArticleProjects/TaskDependencies/Program.cs),
+based on the work done in the modified [sample2\_pools\_and\_resourcefiles.py](./sample2_pools_and_resourcefiles.py).
+This sample demonstrates how you can use task dependencies within a job, and
+how you can have a task operate on other tasks/jobs. Presently the task __Finalize\_1\_Trigger\_2__
+acts as a simple job manager task, but it is not using the JobManager Task definitions.
+Tasks in __PoolsAndResourcesFilesJob1__ will execute, followed by tasks in __PoolsAndResourcesFilesJob2__.
 
 ## Azure Batch on Linux Best Practices
 
